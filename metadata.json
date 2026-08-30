@@ -1,0 +1,10 @@
+{
+  "name": "BotanicaTrack - Suivi Plantes & Créateur de Pubs",
+  "description": "Application de suivi de croissance des plantes par photo, diagnostic IA de santé, chronologie d'évolution avant/après et studio de création de publicités et publications pour réseaux sociaux.",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
