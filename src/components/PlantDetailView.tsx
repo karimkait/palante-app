@@ -1,6 +1,10 @@
 import React, { useState } from 'react';
 import { Plant, PlantLog } from '../types';
 import { BeforeAfterSlider } from './BeforeAfterSlider';
+import { PlantGrowthChart } from './PlantGrowthChart';
+import { FertilizerCalculator } from './FertilizerCalculator';
+import { ComparativeDiagnosisModal } from './ComparativeDiagnosisModal';
+import { getPlantWateringStatus } from '../utils/watering';
 import {
   Camera,
   Calendar,
@@ -16,7 +20,10 @@ import {
   TrendingUp,
   Clock,
   MapPin,
-  Tag
+  Tag,
+  Check,
+  Trash2,
+  X
 } from 'lucide-react';
 
 interface PlantDetailViewProps {
@@ -25,6 +32,9 @@ interface PlantDetailViewProps {
   onAddPhoto: (plant: Plant) => void;
   onOpenAdStudio: (plantId: string, beforeLogId?: string, afterLogId?: string) => void;
   onOpenAiDoctor: (photoUrl: string, plant: Plant) => void;
+  onWaterPlant?: (plantId: string) => void;
+  onUpdateWateringInterval?: (plantId: string, days: number) => void;
+  onDeletePlant?: (plantId: string) => void;
 }
 
 export const PlantDetailView: React.FC<PlantDetailViewProps> = ({
@@ -32,8 +42,13 @@ export const PlantDetailView: React.FC<PlantDetailViewProps> = ({
   onBack,
   onAddPhoto,
   onOpenAdStudio,
-  onOpenAiDoctor
+  onOpenAiDoctor,
+  onWaterPlant,
+  onUpdateWateringInterval,
+  onDeletePlant
 }) => {
+  const [isConfirmDeleteOpen, setIsConfirmDeleteOpen] = useState(false);
+  const [isComparativeModalOpen, setIsComparativeModalOpen] = useState(false);
   const sortedLogs = [...plant.logs].sort(
     (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
   );
@@ -43,6 +58,8 @@ export const PlantDetailView: React.FC<PlantDetailViewProps> = ({
 
   const [selectedBeforeLogId, setSelectedBeforeLogId] = useState<string>(initialLog?.id || '');
   const [selectedAfterLogId, setSelectedAfterLogId] = useState<string>(latestLog?.id || '');
+  const [editingInterval, setEditingInterval] = useState(false);
+  const [tempInterval, setTempInterval] = useState(plant.wateringIntervalDays || 7);
 
   const beforeLog = sortedLogs.find((l) => l.id === selectedBeforeLogId) || initialLog;
   const afterLog = sortedLogs.find((l) => l.id === selectedAfterLogId) || latestLog;
@@ -54,6 +71,8 @@ export const PlantDetailView: React.FC<PlantDetailViewProps> = ({
     Math.round((new Date(latestLog.date).getTime() - new Date(initialLog.date).getTime()) / (1000 * 3600 * 24))
   );
 
+  const wateringStatus = getPlantWateringStatus(plant);
+
   const formatDate = (d: string) => {
     try {
       return new Date(d).toLocaleDateString('fr-FR', {
@@ -64,6 +83,13 @@ export const PlantDetailView: React.FC<PlantDetailViewProps> = ({
     } catch {
       return d;
     }
+  };
+
+  const handleSaveInterval = () => {
+    if (onUpdateWateringInterval && tempInterval > 0) {
+      onUpdateWateringInterval(plant.id, tempInterval);
+    }
+    setEditingInterval(false);
   };
 
   return (
@@ -79,6 +105,17 @@ export const PlantDetailView: React.FC<PlantDetailViewProps> = ({
         </button>
 
         <div className="flex items-center gap-3">
+          {plant.logs.length >= 2 && (
+            <button
+              onClick={() => setIsComparativeModalOpen(true)}
+              title="Lancer une analyse comparative de plusieurs photos d'archives"
+              className="flex items-center gap-2 bg-gradient-to-r from-teal-950 to-emerald-950 hover:from-teal-900 hover:to-emerald-900 text-teal-300 hover:text-teal-200 font-bold text-sm px-4 py-2.5 rounded-xl border border-teal-500/40 shadow transition-all"
+            >
+              <Activity className="w-4 h-4 text-teal-400" />
+              <span>Diagnostic Différé IA</span>
+            </button>
+          )}
+
           <button
             onClick={() => onAddPhoto(plant)}
             className="flex items-center gap-2 bg-stone-900 hover:bg-stone-800 text-stone-200 font-semibold text-sm px-4 py-2.5 rounded-xl border border-stone-800 shadow transition-all"
@@ -94,6 +131,17 @@ export const PlantDetailView: React.FC<PlantDetailViewProps> = ({
             <Sparkles className="w-4 h-4" />
             Créer une Pub Réseaux Sociaux
           </button>
+
+          {onDeletePlant && (
+            <button
+              onClick={() => setIsConfirmDeleteOpen(true)}
+              title="Supprimer cette plante du jardin"
+              className="flex items-center gap-1.5 bg-red-950/40 hover:bg-red-900/60 text-red-400 hover:text-red-300 font-semibold text-sm px-3.5 py-2.5 rounded-xl border border-red-500/30 shadow transition-all"
+            >
+              <Trash2 className="w-4 h-4" />
+              <span className="hidden sm:inline">Supprimer</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -170,10 +218,82 @@ export const PlantDetailView: React.FC<PlantDetailViewProps> = ({
               </div>
             </div>
 
+            {/* Watering Care & Reminders Bar */}
+            <div className="bg-[#181b18] p-4 rounded-2xl border border-stone-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border ${
+                  wateringStatus.isOverdue
+                    ? 'bg-red-950 text-red-400 border-red-500/40 animate-pulse'
+                    : wateringStatus.isDueToday
+                    ? 'bg-amber-950 text-amber-400 border-amber-500/40'
+                    : 'bg-sky-950 text-sky-400 border-sky-500/30'
+                }`}>
+                  <Droplets className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-stone-200">Programme d'arrosage :</span>
+                    <span className={`text-xs font-bold px-2 py-0.5 rounded-md border ${wateringStatus.badgeColor}`}>
+                      {wateringStatus.statusLabel}
+                    </span>
+                  </div>
+                  <p className="text-xs text-stone-400 mt-0.5">
+                    Dernier arrosage : {formatDate(wateringStatus.lastWateredDate)} • Fréquence : tous les {wateringStatus.intervalDays} jours
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                {editingInterval ? (
+                  <div className="flex items-center gap-1.5 bg-[#141614] p-1 rounded-xl border border-stone-700">
+                    <span className="text-[11px] text-stone-400 pl-2">Tous les</span>
+                    <input
+                      type="number"
+                      min="1"
+                      max="60"
+                      value={tempInterval}
+                      onChange={(e) => setTempInterval(Number(e.target.value))}
+                      className="w-14 bg-[#1a1e1a] border border-stone-800 rounded-lg px-2 py-1 text-xs text-center text-stone-100 focus:outline-none"
+                    />
+                    <span className="text-[11px] text-stone-400">j</span>
+                    <button
+                      onClick={handleSaveInterval}
+                      className="p-1.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-500 text-xs"
+                    >
+                      <Check className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => setEditingInterval(true)}
+                    className="px-3 py-2 bg-[#1a1e1a] hover:bg-stone-800 text-stone-300 text-xs font-semibold rounded-xl border border-stone-800 transition-colors"
+                  >
+                    Modifier fréquence
+                  </button>
+                )}
+
+                {onWaterPlant && (
+                  <button
+                    onClick={() => onWaterPlant(plant.id)}
+                    className="px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs rounded-xl shadow-md shadow-sky-950/40 transition-all flex items-center gap-1.5 border border-sky-400/30"
+                  >
+                    <Droplets className="w-3.5 h-3.5" />
+                    <span>Arroser aujourd'hui</span>
+                  </button>
+                )}
+              </div>
+            </div>
+
           </div>
 
         </div>
       </div>
+
+      {/* Growth & Health Score Curve (Recharts) */}
+      <PlantGrowthChart logs={plant.logs} plantName={plant.name} />
+
+      {/* Fertilizer & Nutrient Dosage Calculator */}
+      <FertilizerCalculator plant={plant} />
 
       {/* Interactive Before / After Slider Section */}
       {sortedLogs.length >= 2 && (
@@ -233,7 +353,7 @@ export const PlantDetailView: React.FC<PlantDetailViewProps> = ({
 
       {/* Chronological Evolution Timeline Journal */}
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
             <h2 className="text-2xl font-bold text-stone-100 font-['Outfit',sans-serif]">
               Journal Chronologique des Photos ({plant.logs.length})
@@ -242,14 +362,56 @@ export const PlantDetailView: React.FC<PlantDetailViewProps> = ({
               Toutes les étapes enregistrées avec mesures de croissance et bilans de santé.
             </p>
           </div>
-          <button
-            onClick={() => onAddPhoto(plant)}
-            className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-3.5 py-2 rounded-xl shadow-md shadow-emerald-950/40 border border-emerald-500/30"
-          >
-            <Camera className="w-3.5 h-3.5" />
-            + Nouvelle Photo
-          </button>
+          <div className="flex items-center gap-2.5">
+            {plant.logs.length >= 2 && (
+              <button
+                onClick={() => setIsComparativeModalOpen(true)}
+                className="flex items-center gap-1.5 bg-gradient-to-r from-teal-900/80 to-emerald-900/80 hover:from-teal-800 hover:to-emerald-800 text-teal-200 text-xs font-bold px-3.5 py-2 rounded-xl shadow-md border border-teal-500/30 transition-all"
+              >
+                <Activity className="w-3.5 h-3.5 text-teal-400" />
+                <span>Diagnostic Différé Multi-Photos</span>
+              </button>
+            )}
+            <button
+              onClick={() => onAddPhoto(plant)}
+              className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold px-3.5 py-2 rounded-xl shadow-md shadow-emerald-950/40 border border-emerald-500/30"
+            >
+              <Camera className="w-3.5 h-3.5" />
+              + Nouvelle Photo
+            </button>
+          </div>
         </div>
+
+        {/* Comparative Diagnosis Callout Card */}
+        {plant.logs.length >= 2 && (
+          <div className="bg-gradient-to-r from-[#142318] via-[#121c15] to-[#121915] rounded-3xl p-5 border border-teal-500/40 shadow-lg flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-start sm:items-center gap-3.5">
+              <div className="w-10 h-10 rounded-2xl bg-teal-950 border border-teal-400/40 text-teal-400 flex items-center justify-center shrink-0 shadow-md">
+                <TrendingUp className="w-5 h-5" />
+              </div>
+              <div className="space-y-0.5">
+                <h4 className="text-sm font-bold text-stone-100 font-['Outfit',sans-serif] flex items-center gap-2">
+                  <span>Diagnostic Différé IA disponible</span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-teal-950 text-teal-300 font-extrabold border border-teal-500/30">
+                    {plant.logs.length} photos archivées
+                  </span>
+                </h4>
+                <p className="text-xs text-stone-300">
+                  Comparez plusieurs photos d'archives pour mesurer la vitesse de croissance, l'évolution de la vitalité et recevoir une feuille de route personnalisée.
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setIsComparativeModalOpen(true)}
+              className="px-4 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-bold text-xs shadow-md shadow-teal-950/60 border border-teal-400/40 flex items-center justify-center gap-2 shrink-0 transition-all cursor-pointer"
+            >
+              <Sparkles className="w-4 h-4" />
+              <span>Lancer le Bilan Comparatif</span>
+            </button>
+          </div>
+        )}
 
         {/* Timeline List */}
         <div className="space-y-6 relative before:absolute before:inset-0 before:left-6 sm:before:left-8 before:w-0.5 before:bg-stone-800 before:pointer-events-none">
@@ -385,6 +547,67 @@ export const PlantDetailView: React.FC<PlantDetailViewProps> = ({
           })}
         </div>
       </div>
+
+      {/* Delete Confirmation Modal */}
+      {isConfirmDeleteOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-[#161a16] border border-red-500/40 rounded-3xl p-6 sm:p-7 max-w-md w-full shadow-2xl space-y-5 animate-scaleUp">
+            <div className="flex items-start gap-4">
+              <div className="w-12 h-12 rounded-2xl bg-red-950/80 text-red-400 border border-red-500/40 flex items-center justify-center shrink-0">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="text-lg font-bold text-stone-100 font-['Outfit',sans-serif]">
+                  Supprimer cette plante ?
+                </h3>
+                <p className="text-xs text-stone-300 leading-relaxed">
+                  Êtes-vous sûr de vouloir retirer <strong className="text-white">"{plant.name}"</strong> de votre jardin ?
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-[#121512] rounded-2xl p-3.5 border border-stone-800/80 text-xs text-stone-400 space-y-1.5">
+              <p className="text-red-400/90 font-medium flex items-center gap-1.5">
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+                Attention : Cette action est irréversible.
+              </p>
+              <p className="text-[11px] text-stone-400">
+                L'ensemble de son historique comprenant <strong>{plant.logs.length} photo(s) d'évolution</strong>, ses données de croissance et ses rappels d'arrosage seront définitivement effacés.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setIsConfirmDeleteOpen(false)}
+                className="px-4 py-2.5 rounded-xl text-xs font-semibold text-stone-300 hover:text-white bg-[#1a1e1a] hover:bg-stone-800 border border-stone-800 transition-colors"
+              >
+                Annuler
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsConfirmDeleteOpen(false);
+                  if (onDeletePlant) {
+                    onDeletePlant(plant.id);
+                  }
+                }}
+                className="px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-red-600 hover:bg-red-500 shadow-lg shadow-red-950/50 border border-red-500/40 transition-all flex items-center gap-1.5 cursor-pointer"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>Confirmer la suppression</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Comparative Multi-Photo Diagnosis Modal */}
+      <ComparativeDiagnosisModal
+        isOpen={isComparativeModalOpen}
+        onClose={() => setIsComparativeModalOpen(false)}
+        plant={plant}
+        onOpenAdStudio={onOpenAdStudio}
+      />
     </div>
   );
 };

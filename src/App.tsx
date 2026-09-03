@@ -10,6 +10,19 @@ import { AddPlantModal } from './components/AddPlantModal';
 import { AddLogModal } from './components/AddLogModal';
 import { CameraCaptureModal } from './components/CameraCaptureModal';
 import { AiDoctorModal } from './components/AiDoctorModal';
+import { ComparativeDiagnosisModal } from './components/ComparativeDiagnosisModal';
+import { WateringNotificationPanel } from './components/WateringNotificationPanel';
+import { WateringReminderBanner } from './components/WateringReminderBanner';
+import { GlobalTrendsSection } from './components/GlobalTrendsSection';
+import { GardeningChallengesSection } from './components/GardeningChallengesSection';
+import { GardeningChallengesWidget } from './components/GardeningChallengesWidget';
+import { BadgeDetailModal } from './components/BadgeDetailModal';
+import { getAllPlantsWateringSummary } from './utils/watering';
+import {
+  recordWateringStreakAction,
+  recordDiagnosticRun,
+  GardeningChallenge
+} from './utils/challenges';
 import {
   Sparkles,
   Camera,
@@ -17,13 +30,15 @@ import {
   Leaf,
   Share2,
   TrendingUp,
+  Trophy,
   Search,
   Filter,
   Plus,
   ArrowRight,
   ShieldCheck,
   Droplets,
-  Calendar
+  Calendar,
+  CheckCircle2
 } from 'lucide-react';
 
 export default function App() {
@@ -50,11 +65,14 @@ export default function App() {
 
   const [currentTab, setCurrentTab] = useState<AppTab>('garden');
   const [selectedPlant, setSelectedPlant] = useState<Plant | null>(null);
+  const [inspectingChallenge, setInspectingChallenge] = useState<GardeningChallenge | null>(null);
 
   // Modals state
   const [isAddPlantOpen, setIsAddPlantOpen] = useState(false);
   const [logModalPlant, setLogModalPlant] = useState<Plant | null>(null);
   const [isQuickCameraOpen, setIsQuickCameraOpen] = useState(false);
+  const [isWateringPanelOpen, setIsWateringPanelOpen] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [aiDoctorData, setAiDoctorData] = useState<{
     isOpen: boolean;
     photoUrl?: string;
@@ -73,6 +91,92 @@ export default function App() {
   // Timeline comparative plant state
   const [timelinePlantId, setTimelinePlantId] = useState<string>(plants[0]?.id || '');
   const activeTimelinePlant = plants.find((p) => p.id === timelinePlantId) || plants[0];
+  const [comparativeDiagnosisPlant, setComparativeDiagnosisPlant] = useState<Plant | null>(null);
+
+  // Watering Summary & Stats
+  const wateringSummary = getAllPlantsWateringSummary(plants);
+
+  const showToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => {
+      setToastMessage((prev) => (prev === msg ? null : prev));
+    }, 3500);
+  };
+
+  // Water single plant
+  const handleWaterPlant = (plantId: string) => {
+    const todayStr = new Date().toISOString().split('T')[0];
+    let updatedPlantName = '';
+
+    setPlants((prev) =>
+      prev.map((p) => {
+        if (p.id === plantId) {
+          updatedPlantName = p.name;
+          return {
+            ...p,
+            lastWateredDate: todayStr
+          };
+        }
+        return p;
+      })
+    );
+
+    if (selectedPlant && selectedPlant.id === plantId) {
+      setSelectedPlant((prev) => (prev ? { ...prev, lastWateredDate: todayStr } : null));
+    }
+
+    recordWateringStreakAction();
+    showToast(`💧 ${updatedPlantName || 'Plante'} marquée comme arrosée aujourd'hui !`);
+  };
+
+  // Water all due/overdue plants
+  const handleWaterAllDue = () => {
+    const todayStr = new Date().toISOString().split('T')[0];
+    const dueIds = new Set([
+      ...wateringSummary.overdue.map((p) => p.plantId),
+      ...wateringSummary.dueToday.map((p) => p.plantId)
+    ]);
+
+    setPlants((prev) =>
+      prev.map((p) => {
+        if (dueIds.has(p.id)) {
+          return {
+            ...p,
+            lastWateredDate: todayStr
+          };
+        }
+        return p;
+      })
+    );
+
+    if (selectedPlant && dueIds.has(selectedPlant.id)) {
+      setSelectedPlant((prev) => (prev ? { ...prev, lastWateredDate: todayStr } : null));
+    }
+
+    recordWateringStreakAction();
+    showToast(`🌱 ${dueIds.size} plante(s) hydratée(s) avec succès !`);
+  };
+
+  // Update watering interval
+  const handleUpdateWateringInterval = (plantId: string, days: number) => {
+    setPlants((prev) =>
+      prev.map((p) => {
+        if (p.id === plantId) {
+          return {
+            ...p,
+            wateringIntervalDays: days
+          };
+        }
+        return p;
+      })
+    );
+
+    if (selectedPlant && selectedPlant.id === plantId) {
+      setSelectedPlant((prev) => (prev ? { ...prev, wateringIntervalDays: days } : null));
+    }
+
+    showToast(`Fréquence d'arrosage mise à jour : tous les ${days} jours.`);
+  };
 
   // Calculations for global dashboard
   const totalPhotosLogged = plants.reduce((acc, p) => acc + p.logs.length, 0);
@@ -97,6 +201,16 @@ export default function App() {
   const handleAddPlant = (newPlant: Plant) => {
     setPlants((prev) => [newPlant, ...prev]);
     setSelectedPlant(newPlant);
+  };
+
+  // Delete plant handler
+  const handleDeletePlant = (plantId: string) => {
+    const plantToDelete = plants.find((p) => p.id === plantId);
+    setPlants((prev) => prev.filter((p) => p.id !== plantId));
+    if (selectedPlant && selectedPlant.id === plantId) {
+      setSelectedPlant(null);
+    }
+    showToast(`🗑️ "${plantToDelete?.name || 'La plante'}" a été retirée du jardin.`);
   };
 
   // Add new log handler
@@ -153,6 +267,16 @@ export default function App() {
 
   return (
     <div className="min-h-screen flex flex-col bg-[#0c0d0c] text-[#e0e0e0] font-['Plus_Jakarta_Sans',sans-serif]">
+      {/* Toast Notification Alert */}
+      {toastMessage && (
+        <div className="fixed bottom-6 right-6 z-50 bg-[#161a16] border border-emerald-500/50 text-white px-4 py-3 rounded-2xl shadow-2xl shadow-black/80 flex items-center gap-3 animate-fadeIn">
+          <div className="w-8 h-8 rounded-xl bg-emerald-950 text-emerald-300 border border-emerald-500/40 flex items-center justify-center shrink-0">
+            <CheckCircle2 className="w-4 h-4" />
+          </div>
+          <p className="text-xs font-semibold text-stone-100">{toastMessage}</p>
+        </div>
+      )}
+
       {/* Navigation Header */}
       <Navbar
         currentTab={currentTab}
@@ -163,6 +287,8 @@ export default function App() {
         onOpenAddPlant={() => setIsAddPlantOpen(true)}
         onQuickSnapPhoto={() => setIsQuickCameraOpen(true)}
         totalPlantsCount={plants.length}
+        wateringAlertCount={wateringSummary.needsWaterCount}
+        onOpenWateringNotifications={() => setIsWateringPanelOpen(true)}
       />
 
       {/* Main App Content Area */}
@@ -176,12 +302,24 @@ export default function App() {
             onAddPhoto={(p) => setLogModalPlant(p)}
             onOpenAdStudio={handleOpenAdStudio}
             onOpenAiDoctor={(photo, p) => setAiDoctorData({ isOpen: true, photoUrl: photo, plant: p })}
+            onWaterPlant={handleWaterPlant}
+            onUpdateWateringInterval={handleUpdateWateringInterval}
+            onDeletePlant={handleDeletePlant}
           />
         ) : currentTab === 'garden' ? (
           
           /* VIEW 2: GARDEN DASHBOARD & PLANT GRID */
           <div className="space-y-8 animate-fadeIn">
             
+            {/* Watering Reminder Banner (Alerts when plants need water) */}
+            <WateringReminderBanner
+              plants={plants}
+              onOpenNotifications={() => setIsWateringPanelOpen(true)}
+              onWaterPlant={handleWaterPlant}
+              onWaterAllDue={handleWaterAllDue}
+              onSelectPlant={(p) => setSelectedPlant(p)}
+            />
+
             {/* Hero Stats & Quick Ad Promotion Showcase */}
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
               
@@ -254,6 +392,45 @@ export default function App() {
 
             </div>
 
+            {/* Gardening Challenges & Virtual Badges Widget */}
+            <GardeningChallengesWidget
+              plants={plants}
+              onOpenChallengesTab={() => setCurrentTab('challenges')}
+              onSelectChallenge={(c) => setInspectingChallenge(c)}
+              onOpenAddPlant={() => setIsAddPlantOpen(true)}
+              onOpenWatering={() => setIsWateringPanelOpen(true)}
+            />
+
+            {/* Quick Global Trends Teaser Card */}
+            <div className="bg-[#141614] rounded-3xl p-5 sm:p-6 border border-stone-800 shadow-md flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 rounded-2xl bg-emerald-950 text-emerald-400 border border-emerald-500/30 flex items-center justify-center shrink-0">
+                  <TrendingUp className="w-6 h-6" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-base font-bold text-stone-100 font-['Outfit',sans-serif]">
+                      Tendances Globales & Taux de Croissance
+                    </h3>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-500/30 font-semibold">
+                      Dernier mois
+                    </span>
+                  </div>
+                  <p className="text-xs text-stone-400 mt-0.5">
+                    Santé collective : <strong className="text-emerald-400">{avgHealth}/100</strong> • Suivi consolidé des taux de croissance et vélocité foliaire sur recharts.
+                  </p>
+                </div>
+              </div>
+
+              <button
+                onClick={() => setCurrentTab('trends')}
+                className="py-2.5 px-4 bg-[#1a1e1a] hover:bg-emerald-600 text-stone-200 hover:text-white text-xs font-bold rounded-xl border border-stone-800 hover:border-emerald-500/40 transition-all flex items-center justify-center gap-2 shrink-0 shadow-xs"
+              >
+                <span>Ouvrir l'Analyse des Tendances</span>
+                <ArrowRight className="w-4 h-4 text-emerald-400 group-hover:translate-x-0.5 transition-transform" />
+              </button>
+            </div>
+
             {/* Search & Category Filter Bar */}
             <div className="flex flex-col sm:flex-row items-center justify-between gap-4 bg-[#141614] p-4 rounded-2xl border border-stone-800 shadow-xs">
               
@@ -318,6 +495,8 @@ export default function App() {
                       onSelect={(p) => setSelectedPlant(p)}
                       onAddPhoto={(p) => setLogModalPlant(p)}
                       onCreateAd={(p) => handleOpenAdStudio(p.id)}
+                      onWaterPlant={handleWaterPlant}
+                      onDeletePlant={handleDeletePlant}
                     />
                   ))}
                 </div>
@@ -342,6 +521,26 @@ export default function App() {
 
           </div>
 
+        ) : currentTab === 'challenges' ? (
+          
+          /* VIEW 3: GARDENING CHALLENGES & VIRTUAL BADGES SECTION */
+          <GardeningChallengesSection
+            plants={plants}
+            onNavigateTab={(tab) => setCurrentTab(tab as AppTab)}
+            onOpenAddPlant={() => setIsAddPlantOpen(true)}
+            onQuickSnapPhoto={() => setIsQuickCameraOpen(true)}
+            onOpenWateringPanel={() => setIsWateringPanelOpen(true)}
+          />
+
+        ) : currentTab === 'trends' ? (
+          
+          /* VIEW 3: GLOBAL TRENDS & COLLECTIVE HEALTH/GROWTH SECTION */
+          <GlobalTrendsSection
+            plants={plants}
+            onSelectPlant={(p) => setSelectedPlant(p)}
+            onOpenAdStudio={handleOpenAdStudio}
+          />
+
         ) : currentTab === 'timeline' ? (
           
           /* VIEW 3: GLOBAL TIMELINE & BEFORE/AFTER COMPARATOR */
@@ -358,8 +557,8 @@ export default function App() {
                   </p>
                 </div>
 
-                {/* Plant Selector for Timeline */}
-                <div className="flex items-center gap-2 bg-[#1a1e1a] p-2 rounded-2xl border border-stone-800">
+                {/* Plant Selector for Timeline & Comparative Diagnostic Action */}
+                <div className="flex flex-wrap items-center gap-2 bg-[#1a1e1a] p-2 rounded-2xl border border-stone-800">
                   <span className="text-xs font-bold text-stone-400 pl-2">Plante :</span>
                   <select
                     value={timelinePlantId}
@@ -372,6 +571,17 @@ export default function App() {
                       </option>
                     ))}
                   </select>
+
+                  {activeTimelinePlant && activeTimelinePlant.logs.length >= 2 && (
+                    <button
+                      type="button"
+                      onClick={() => setComparativeDiagnosisPlant(activeTimelinePlant)}
+                      className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-teal-950 to-emerald-950 hover:from-teal-900 hover:to-emerald-900 text-teal-300 hover:text-teal-200 text-xs font-bold border border-teal-500/40 shadow-sm flex items-center gap-1.5 transition-all cursor-pointer"
+                    >
+                      <Sparkles className="w-3.5 h-3.5 text-teal-400" />
+                      <span>Diagnostic Différé IA</span>
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
@@ -482,6 +692,55 @@ export default function App() {
               </div>
             </div>
 
+            {/* Comparative Diagnosis Callout in AI Doctor Clinic */}
+            <div className="bg-gradient-to-r from-[#11241a] via-[#101b15] to-[#141614] rounded-3xl p-6 sm:p-7 border border-teal-500/40 shadow-xl space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="flex items-start gap-4">
+                  <div className="w-12 h-12 rounded-2xl bg-teal-950 text-teal-400 border border-teal-400/30 flex items-center justify-center shrink-0 shadow-md">
+                    <TrendingUp className="w-6 h-6" />
+                  </div>
+                  <div className="space-y-1">
+                    <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-teal-950 text-teal-300 text-[10px] font-bold border border-teal-500/30 uppercase tracking-wider">
+                      Nouveau • Analyse Temporelle
+                    </div>
+                    <h3 className="text-lg sm:text-xl font-bold text-stone-100 font-['Outfit',sans-serif]">
+                      Diagnostic Différé & Évolution Chronologique
+                    </h3>
+                    <p className="text-xs sm:text-sm text-stone-300 max-w-2xl">
+                      Sélectionnez plusieurs photos d'archives de votre plante pour obtenir un bilan comparatif global, mesurer la vitesse réelle de croissance et déceler l'impact de vos soins dans le temps.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Plant selection chips for fast comparative analysis */}
+              <div className="pt-2 border-t border-stone-800/80 flex flex-wrap items-center gap-2">
+                <span className="text-xs text-stone-400 font-semibold mr-1">Plantes avec archives :</span>
+                {plants.filter((p) => p.logs.length >= 2).length > 0 ? (
+                  plants
+                    .filter((p) => p.logs.length >= 2)
+                    .map((p) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => setComparativeDiagnosisPlant(p)}
+                        className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[#141614] hover:bg-teal-950/80 text-stone-200 hover:text-teal-200 text-xs font-bold border border-stone-800 hover:border-teal-500/50 transition-all shadow-sm cursor-pointer"
+                      >
+                        <span className="w-2 h-2 rounded-full bg-teal-400"></span>
+                        <span>{p.name}</span>
+                        <span className="text-[10px] px-1.5 py-0.2 rounded bg-stone-900 text-stone-400">
+                          {p.logs.length} photos
+                        </span>
+                      </button>
+                    ))
+                ) : (
+                  <span className="text-xs text-stone-500 italic">
+                    Ajoutez au moins 2 photos d'évolution sur une plante pour activer le diagnostic différé.
+                  </span>
+                )}
+              </div>
+            </div>
+
             {/* Quick Cards of Current Plants Health */}
             <div className="space-y-4">
               <h2 className="text-xl font-bold text-stone-100 font-['Outfit',sans-serif]">
@@ -511,19 +770,31 @@ export default function App() {
                         </div>
                       </div>
 
-                      <button
-                        onClick={() =>
-                          setAiDoctorData({
-                            isOpen: true,
-                            photoUrl: lastLog?.photoUrl || p.coverImage,
-                            plant: p
-                          })
-                        }
-                        className="w-full py-2 bg-[#1a1e1a] hover:bg-emerald-950 text-emerald-300 font-bold text-xs rounded-xl border border-stone-800 transition-colors flex items-center justify-center gap-1.5"
-                      >
-                        <Sparkles className="w-3.5 h-3.5" />
-                        Re-scanner la santé
-                      </button>
+                      <div className="space-y-2">
+                        <button
+                          onClick={() =>
+                            setAiDoctorData({
+                              isOpen: true,
+                              photoUrl: lastLog?.photoUrl || p.coverImage,
+                              plant: p
+                            })
+                          }
+                          className="w-full py-2 bg-[#1a1e1a] hover:bg-emerald-950 text-emerald-300 font-bold text-xs rounded-xl border border-stone-800 transition-colors flex items-center justify-center gap-1.5"
+                        >
+                          <Sparkles className="w-3.5 h-3.5" />
+                          Re-scanner la santé
+                        </button>
+
+                        {p.logs.length >= 2 && (
+                          <button
+                            onClick={() => setComparativeDiagnosisPlant(p)}
+                            className="w-full py-1.5 bg-teal-950/40 hover:bg-teal-950 text-teal-300 font-semibold text-[11px] rounded-xl border border-teal-500/30 transition-colors flex items-center justify-center gap-1.5"
+                          >
+                            <TrendingUp className="w-3 h-3 text-teal-400" />
+                            Diagnostic Différé ({p.logs.length} photos)
+                          </button>
+                        )}
+                      </div>
                     </div>
                   );
                 })}
@@ -575,9 +846,34 @@ export default function App() {
       {/* 4. AI Doctor Clinic Modal */}
       <AiDoctorModal
         isOpen={aiDoctorData.isOpen}
+        plants={plants}
         initialPhotoUrl={aiDoctorData.photoUrl}
         initialPlant={aiDoctorData.plant}
         onClose={() => setAiDoctorData({ isOpen: false })}
+        onSaveDiagnosisToPlant={(plantId, diag, photo) => {
+          setPlants((prev) =>
+            prev.map((p) => {
+              if (p.id !== plantId) return p;
+              const lastLog = p.logs[p.logs.length - 1];
+              const newLog = {
+                id: `log-${Date.now()}`,
+                date: new Date().toISOString().split('T')[0],
+                photoUrl: photo,
+                heightCm: lastLog?.heightCm || 30,
+                leafCount: lastLog?.leafCount || 6,
+                healthScore: diag.healthScore,
+                stage: diag.growthStage || 'Croissance active',
+                notes: `[Diagnostic IA] ${diag.diagnosisSummary}`,
+                diagnosis: diag
+              };
+              return {
+                ...p,
+                notes: diag.diagnosisSummary || p.notes,
+                logs: [...p.logs, newLog]
+              };
+            })
+          );
+        }}
         onAddAsNewPlant={(diag, photo) => {
           const newPlant: Plant = {
             id: `plant-${Date.now()}`,
@@ -598,7 +894,7 @@ export default function App() {
                 heightCm: 25,
                 leafCount: 5,
                 healthScore: diag.healthScore,
-                stage: 'Croissance active',
+                stage: diag.growthStage || 'Croissance active',
                 notes: diag.diagnosisSummary,
                 diagnosis: diag
               }
@@ -607,6 +903,43 @@ export default function App() {
           handleAddPlant(newPlant);
         }}
       />
+      {/* 5. Watering Reminders & Notification Drawer */}
+      <WateringNotificationPanel
+        plants={plants}
+        isOpen={isWateringPanelOpen}
+        onClose={() => setIsWateringPanelOpen(false)}
+        onWaterPlant={handleWaterPlant}
+        onWaterAllDue={handleWaterAllDue}
+        onSelectPlant={(p) => {
+          setSelectedPlant(p);
+          setIsWateringPanelOpen(false);
+        }}
+      />
+
+      {/* 6. Gardening Badge Detail Modal */}
+      {inspectingChallenge && (
+        <BadgeDetailModal
+          challenge={inspectingChallenge}
+          onClose={() => setInspectingChallenge(null)}
+          onNavigateAction={(tab, actionKey) => {
+            setInspectingChallenge(null);
+            if (actionKey === 'add_plant') setIsAddPlantOpen(true);
+            else if (actionKey === 'open_watering') setIsWateringPanelOpen(true);
+            else if (actionKey === 'quick_camera') setIsQuickCameraOpen(true);
+            else if (tab) setCurrentTab(tab as AppTab);
+          }}
+        />
+      )}
+
+      {/* 7. Comparative Multi-Photo Diagnosis Modal */}
+      {comparativeDiagnosisPlant && (
+        <ComparativeDiagnosisModal
+          isOpen={!!comparativeDiagnosisPlant}
+          plant={comparativeDiagnosisPlant}
+          onClose={() => setComparativeDiagnosisPlant(null)}
+          onOpenAdStudio={handleOpenAdStudio}
+        />
+      )}
     </div>
   );
 }

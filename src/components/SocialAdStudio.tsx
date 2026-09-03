@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Plant, PlantLog, SocialPlatform, AdObjective, AdTheme, SocialAdDraft } from '../types';
 import { renderAdToCanvas } from '../utils/canvasExport';
+import { shareAdImage, isWebShareSupported } from '../utils/webShare';
+import { recordAdCreated } from '../utils/challenges';
 import {
   Sparkles,
   Download,
@@ -18,7 +20,9 @@ import {
   TrendingUp,
   RefreshCw,
   Layers,
-  ArrowRight
+  ArrowRight,
+  Loader2,
+  CheckCircle2
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -106,6 +110,10 @@ export const SocialAdStudio: React.FC<SocialAdStudioProps> = ({
   const [renderedImageUrl, setRenderedImageUrl] = useState<string>('');
   const [showFeedPreviewModal, setShowFeedPreviewModal] = useState(false);
   const [customOfferInput, setCustomOfferInput] = useState('');
+  const [isSharing, setIsSharing] = useState(false);
+  const [shareToast, setShareToast] = useState<{ message: string; type: 'success' | 'info' } | null>(null);
+
+  const isNativeShareAvailable = isWebShareSupported();
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
@@ -189,6 +197,14 @@ export const SocialAdStudio: React.FC<SocialAdStudioProps> = ({
       spread: 70,
       origin: { y: 0.7 }
     });
+
+    recordAdCreated();
+
+    setShareToast({
+      message: "Image PNG téléchargée avec succès !",
+      type: 'success'
+    });
+    setTimeout(() => setShareToast(null), 3000);
   };
 
   // Copy caption and hashtags
@@ -196,23 +212,73 @@ export const SocialAdStudio: React.FC<SocialAdStudioProps> = ({
     const fullText = `${draft.hookLine}\n\n${draft.caption}\n\n${draft.hashtags.join(' ')}`;
     navigator.clipboard.writeText(fullText);
     setCopiedText(true);
-    setTimeout(() => setCopiedText(false), 2500);
+    setShareToast({
+      message: "Légende et hashtags copiés dans le presse-papier !",
+      type: 'success'
+    });
+    setTimeout(() => {
+      setCopiedText(false);
+      setShareToast(null);
+    }, 3000);
   };
 
-  // Share via Web Share API or feed simulation modal
+  // Share via Web Share API Level 2 (with direct image file support)
   const handleShare = async () => {
-    if (navigator.share) {
+    if (!renderedImageUrl) return;
+
+    // If browser supports Web Share API
+    if (isNativeShareAvailable) {
+      setIsSharing(true);
+      setShareToast(null);
+
+      const filename = `BotanicaAd_${selectedPlant.name.replace(/\s+/g, '_')}_${draft.platform}.png`;
+      const fullText = `${draft.hookLine}\n\n${draft.caption}\n\n${draft.hashtags.join(' ')}`;
+
       try {
-        await navigator.share({
+        const result = await shareAdImage({
+          dataUrl: renderedImageUrl,
           title: draft.headline,
-          text: `${draft.hookLine}\n\n${draft.caption}\n\n${draft.hashtags.join(' ')}`
+          text: fullText,
+          filename
         });
-        return;
+
+        if (result.success) {
+          confetti({
+            particleCount: 50,
+            spread: 70,
+            origin: { y: 0.7 }
+          });
+          recordAdCreated();
+          setShareToast({
+            message: result.sharedWithFile
+              ? "Image et texte partagés avec succès !"
+              : "Texte publicitaire partagé avec succès !",
+            type: 'success'
+          });
+          setTimeout(() => setShareToast(null), 4000);
+          return;
+        } else if (result.cancelled) {
+          // User closed share sheet without completing
+          return;
+        } else {
+          // Web Share failed with specific error, fallback to preview simulation
+          setShowFeedPreviewModal(true);
+        }
       } catch (err) {
-        // Fallback to feed preview modal
+        console.error('Erreur Web Share:', err);
+        setShowFeedPreviewModal(true);
+      } finally {
+        setIsSharing(false);
       }
+    } else {
+      // Fallback for browsers / desktops without navigator.share
+      setShowFeedPreviewModal(true);
+      setShareToast({
+        message: "Partage direct non supporté sur ce navigateur. Utilisez le téléchargement ou la copie.",
+        type: 'info'
+      });
+      setTimeout(() => setShareToast(null), 4000);
     }
-    setShowFeedPreviewModal(true);
   };
 
   const platformsList: { id: SocialPlatform; name: string; icon: any; aspect: string; size: string }[] = [
@@ -608,42 +674,71 @@ export const SocialAdStudio: React.FC<SocialAdStudioProps> = ({
               )}
             </div>
 
-            {/* Action Buttons: Download, Copy, Share */}
-            <div className="space-y-2.5">
+            {/* Action Buttons: Web Share, Download, Copy, Simulator */}
+            <div className="space-y-3">
+              {/* Primary Native Web Share Button */}
               <button
-                onClick={handleDownloadImage}
-                className="w-full py-3.5 px-4 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm rounded-2xl shadow-md shadow-emerald-950/40 hover:shadow-lg transition-all flex items-center justify-center gap-2 border border-emerald-500/30"
+                onClick={handleShare}
+                disabled={isSharing || !renderedImageUrl}
+                className="w-full py-3.5 px-4 bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-500 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-sm rounded-2xl shadow-lg shadow-emerald-950/50 hover:shadow-emerald-900/60 transition-all flex items-center justify-center gap-2.5 border border-emerald-400/40 disabled:opacity-50"
               >
-                <Download className="w-4 h-4" />
-                Télécharger l'Image HD (PNG)
+                {isSharing ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin text-white" />
+                    <span>Préparation du partage...</span>
+                  </>
+                ) : (
+                  <>
+                    <Share2 className="w-4 h-4 text-emerald-100" />
+                    <span>Partager l'image vers vos Apps</span>
+                    <span className="text-[10px] bg-emerald-950/70 text-emerald-200 px-2 py-0.5 rounded-full font-semibold border border-emerald-400/30">
+                      Mobile & Réseaux
+                    </span>
+                  </>
+                )}
               </button>
 
               <div className="grid grid-cols-2 gap-2.5">
+                <button
+                  onClick={handleDownloadImage}
+                  disabled={!renderedImageUrl}
+                  className="py-3 px-3 bg-stone-900 hover:bg-stone-800 text-stone-200 font-semibold text-xs rounded-2xl transition-colors flex items-center justify-center gap-2 border border-stone-800 disabled:opacity-50"
+                >
+                  <Download className="w-4 h-4 text-emerald-400" />
+                  Télécharger (PNG)
+                </button>
+
                 <button
                   onClick={handleCopyCaption}
                   className="py-3 px-3 border border-stone-800 hover:bg-stone-900 text-stone-300 font-semibold text-xs rounded-2xl transition-colors flex items-center justify-center gap-2"
                 >
                   {copiedText ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
-                  {copiedText ? 'Copié !' : 'Copier Légende & Tags'}
-                </button>
-
-                <button
-                  onClick={handleShare}
-                  className="py-3 px-3 bg-stone-900 hover:bg-stone-800 text-stone-200 font-semibold text-xs rounded-2xl transition-colors flex items-center justify-center gap-2 border border-stone-800"
-                >
-                  <Share2 className="w-4 h-4 text-emerald-400" />
-                  Partager / Publier
+                  {copiedText ? 'Copié !' : 'Copier Légende'}
                 </button>
               </div>
             </div>
 
+            {/* In-app Toast alert for Share Studio */}
+            {shareToast && (
+              <div
+                className={`p-3 rounded-xl text-xs font-medium flex items-center gap-2.5 transition-all animate-fadeIn ${
+                  shareToast.type === 'success'
+                    ? 'bg-emerald-950/80 border border-emerald-500/50 text-emerald-200'
+                    : 'bg-stone-900 border border-stone-700 text-stone-300'
+                }`}
+              >
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                <span>{shareToast.message}</span>
+              </div>
+            )}
+
             {/* Quick Tips */}
-            <div className="bg-emerald-950/40 rounded-2xl p-3.5 border border-emerald-500/30 text-xs text-emerald-300 space-y-1">
+            <div className="bg-emerald-950/40 rounded-2xl p-3.5 border border-emerald-500/30 text-xs text-emerald-300 space-y-1.5">
               <p className="font-bold flex items-center gap-1.5">
-                <Sparkles className="w-3.5 h-3.5 text-emerald-400" /> Conseil d'engagement :
+                <Sparkles className="w-3.5 h-3.5 text-emerald-400" /> Partage direct Web Share :
               </p>
               <p className="text-emerald-200/90 leading-relaxed text-[11px]">
-                Les publications Avant/Après de plantes génèrent en moyenne <strong>3.4x plus de partages</strong> et <strong>+40% de clics</strong> publicitaires grâce à la preuve visuelle de croissance !
+                En cliquant sur <strong>Partager</strong>, votre téléphone ouvre directement la sélection d'applications (Instagram, WhatsApp, TikTok, Pinterest, X...) avec le visuel HD et le texte attachés !
               </p>
             </div>
           </div>
@@ -712,19 +807,32 @@ export const SocialAdStudio: React.FC<SocialAdStudioProps> = ({
                 <p className="text-emerald-400 font-medium">{draft.hashtags.slice(0, 5).join(' ')}</p>
               </div>
 
-              <div className="pt-3 border-t border-stone-800 flex gap-2">
+              <div className="pt-3 border-t border-stone-800 flex flex-col gap-2">
                 <button
-                  onClick={handleDownloadImage}
-                  className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl shadow border border-emerald-500/30"
+                  onClick={handleShare}
+                  disabled={isSharing}
+                  className="w-full py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-bold rounded-xl shadow border border-emerald-500/30 flex items-center justify-center gap-2"
                 >
-                  Télécharger & Publier
+                  {isSharing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Share2 className="w-3.5 h-3.5" />}
+                  Partager directement vers une application
                 </button>
-                <button
-                  onClick={handleCopyCaption}
-                  className="flex-1 py-2.5 border border-stone-800 text-stone-300 text-xs font-semibold rounded-xl hover:bg-stone-900"
-                >
-                  {copiedText ? 'Copié !' : 'Copier Légende'}
-                </button>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={handleDownloadImage}
+                    className="py-2 bg-stone-900 hover:bg-stone-800 text-stone-200 text-xs font-medium rounded-xl border border-stone-800 flex items-center justify-center gap-1.5"
+                  >
+                    <Download className="w-3.5 h-3.5 text-emerald-400" />
+                    Télécharger
+                  </button>
+                  <button
+                    onClick={handleCopyCaption}
+                    className="py-2 border border-stone-800 text-stone-300 text-xs font-medium rounded-xl hover:bg-stone-900 flex items-center justify-center gap-1.5"
+                  >
+                    {copiedText ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                    {copiedText ? 'Copié !' : 'Copier Légende'}
+                  </button>
+                </div>
               </div>
             </div>
           </div>

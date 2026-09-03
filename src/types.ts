@@ -19,6 +19,39 @@ export interface PlantCareAdvice {
   soilAndFertilizer: string;
 }
 
+export interface TimeLapseStageAnalysis {
+  photoIndex: number;
+  date: string;
+  stageName: string;
+  vitalityScore: number;
+  keyObservations: string;
+  chlorophyllHealth: string;
+}
+
+export interface ComparativeDiagnosis {
+  plantName: string;
+  scientificName: string;
+  timeframeCovered: string;
+  totalPhotosAnalyzed: number;
+  globalTrend: string;
+  vitalityEvolutionScore: {
+    startScore: number;
+    endScore: number;
+    delta: number;
+  };
+  growthVelocitySummary: string;
+  comparativeAnalysis: string;
+  stageProgression: TimeLapseStageAnalysis[];
+  identifiedMilestones: string[];
+  stressFactorsDetected: string[];
+  longTermForecast: string;
+  tailoredCareRoadmap: {
+    immediate: string;
+    nextMonth: string;
+    seasonalAdjustment: string;
+  };
+}
+
 export interface PlantDiagnosis {
   speciesName: string;
   scientificName: string;

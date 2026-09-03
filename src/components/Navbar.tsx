@@ -8,10 +8,14 @@ import {
   Leaf,
   Activity,
   Menu,
-  X
+  X,
+  Bell,
+  Droplets,
+  TrendingUp,
+  Trophy
 } from 'lucide-react';
 
-export type AppTab = 'garden' | 'timeline' | 'ads_studio' | 'ai_doctor';
+export type AppTab = 'garden' | 'trends' | 'challenges' | 'timeline' | 'ads_studio' | 'ai_doctor';
 
 interface NavbarProps {
   currentTab: AppTab;
@@ -19,6 +23,8 @@ interface NavbarProps {
   onOpenAddPlant: () => void;
   onQuickSnapPhoto: () => void;
   totalPlantsCount: number;
+  wateringAlertCount?: number;
+  onOpenWateringNotifications: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -26,12 +32,16 @@ export const Navbar: React.FC<NavbarProps> = ({
   onSelectTab,
   onOpenAddPlant,
   onQuickSnapPhoto,
-  totalPlantsCount
+  totalPlantsCount,
+  wateringAlertCount = 0,
+  onOpenWateringNotifications
 }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
 
   const tabs: { id: AppTab; label: string; icon: any; badge?: string }[] = [
     { id: 'garden', label: 'Mon Jardin', icon: Leaf, badge: totalPlantsCount.toString() },
+    { id: 'challenges', label: 'Défis & Badges', icon: Trophy, badge: 'Nouveau' },
+    { id: 'trends', label: 'Tendances Globales', icon: TrendingUp },
     { id: 'timeline', label: 'Chronologie & Évolution', icon: Layers },
     { id: 'ads_studio', label: 'Studio Pub Réseaux', icon: Share2, badge: 'IA' },
     { id: 'ai_doctor', label: 'Diagnostic Santé IA', icon: Sparkles }
@@ -96,8 +106,24 @@ export const Navbar: React.FC<NavbarProps> = ({
             })}
           </nav>
 
-          {/* Top Quick Actions */}
+          {/* Top Quick Actions & Notification Bell */}
           <div className="hidden sm:flex items-center gap-2.5">
+            {/* Watering Notification Bell */}
+            <button
+              onClick={onOpenWateringNotifications}
+              title="Rappels d'arrosage"
+              className="relative p-2.5 rounded-xl bg-stone-900 hover:bg-stone-800 text-stone-300 hover:text-white border border-stone-800 transition-all"
+            >
+              <Bell className="w-4 h-4" />
+              {wateringAlertCount > 0 ? (
+                <span className="absolute -top-1 -right-1 min-w-5 h-5 px-1 rounded-full bg-red-600 text-white font-extrabold text-[10px] flex items-center justify-center border-2 border-[#0e100e] shadow animate-pulse">
+                  {wateringAlertCount}
+                </span>
+              ) : (
+                <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-emerald-500"></span>
+              )}
+            </button>
+
             <button
               onClick={onQuickSnapPhoto}
               className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-stone-900/90 hover:bg-stone-800 text-stone-200 text-xs font-bold border border-stone-800 transition-colors shadow-sm"
@@ -115,8 +141,19 @@ export const Navbar: React.FC<NavbarProps> = ({
             </button>
           </div>
 
-          {/* Mobile Menu Toggle */}
+          {/* Mobile Menu Toggle & Bell */}
           <div className="flex md:hidden items-center gap-2">
+            <button
+              onClick={onOpenWateringNotifications}
+              className="relative p-2 rounded-xl bg-stone-900 border border-stone-800 text-stone-200"
+            >
+              <Bell className="w-5 h-5" />
+              {wateringAlertCount > 0 && (
+                <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-red-600 text-white font-extrabold text-[9px] flex items-center justify-center border-2 border-[#0e100e]">
+                  {wateringAlertCount}
+                </span>
+              )}
+            </button>
             <button
               onClick={onQuickSnapPhoto}
               className="p-2 rounded-xl bg-stone-900 border border-stone-800 text-stone-200"
